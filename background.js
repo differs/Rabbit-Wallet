@@ -531,59 +531,255 @@ async function getNativeTokenBalance(address, chain) {
 // Function to get token balances
 async function getTokenBalances(address, chain) {
   try {
-    // Simulate fetching token balances
-    const tokens = [];
+    // Get user's tracked tokens from storage
+    const storedTokens = await getTrackedTokens(chain);
     
-    const tokenData = {
-      ethereum: [
-        { symbol: 'ETH', name: 'Ethereum', balance: Math.random().toFixed(4), decimals: 18 },
-        { symbol: 'USDT', name: 'Tether', balance: (Math.random() * 1000).toFixed(2), decimals: 6 },
-        { symbol: 'USDC', name: 'USD Coin', balance: (Math.random() * 1000).toFixed(2), decimals: 6 },
-        { symbol: 'DAI', name: 'Dai', balance: (Math.random() * 500).toFixed(2), decimals: 18 },
-        { symbol: 'WBTC', name: 'Wrapped Bitcoin', balance: (Math.random() * 0.1).toFixed(6), decimals: 8 }
-      ],
-      polygon: [
-        { symbol: 'MATIC', name: 'Matic', balance: (Math.random() * 100).toFixed(4), decimals: 18 },
-        { symbol: 'USDT', name: 'Tether', balance: (Math.random() * 1000).toFixed(2), decimals: 6 },
-        { symbol: 'USDC', name: 'USD Coin', balance: (Math.random() * 1000).toFixed(2), decimals: 6 },
-        { symbol: 'WMATIC', name: 'Wrapped Matic', balance: (Math.random() * 50).toFixed(4), decimals: 18 }
-      ],
-      bsc: [
-        { symbol: 'BNB', name: 'Binance Coin', balance: (Math.random() * 5).toFixed(4), decimals: 18 },
-        { symbol: 'BUSD', name: 'Binance USD', balance: (Math.random() * 1000).toFixed(2), decimals: 18 },
-        { symbol: 'CAKE', name: 'PancakeSwap Token', balance: (Math.random() * 50).toFixed(4), decimals: 18 }
-      ],
-      arbitrum: [
-        { symbol: 'ETH', name: 'Ethereum', balance: Math.random().toFixed(4), decimals: 18 },
-        { symbol: 'ARB', name: 'Arbitrum', balance: (Math.random() * 100).toFixed(4), decimals: 18 },
-        { symbol: 'USDC', name: 'USD Coin', balance: (Math.random() * 1000).toFixed(2), decimals: 6 }
-      ],
-      optimism: [
-        { symbol: 'ETH', name: 'Ethereum', balance: Math.random().toFixed(4), decimals: 18 },
-        { symbol: 'OP', name: 'Optimism', balance: (Math.random() * 100).toFixed(4), decimals: 18 },
-        { symbol: 'USDC', name: 'USD Coin', balance: (Math.random() * 1000).toFixed(2), decimals: 6 }
-      ],
-      avalanche: [
-        { symbol: 'AVAX', name: 'Avalanche', balance: (Math.random() * 10).toFixed(4), decimals: 18 },
-        { symbol: 'USDC', name: 'USD Coin', balance: (Math.random() * 1000).toFixed(2), decimals: 6 },
-        { symbol: 'JOE', name: 'JoeToken', balance: (Math.random() * 200).toFixed(4), decimals: 18 }
-      ],
-      fantom: [
-        { symbol: 'FTM', name: 'Fantom', balance: (Math.random() * 100).toFixed(4), decimals: 18 },
-        { symbol: 'USDC', name: 'USD Coin', balance: (Math.random() * 1000).toFixed(2), decimals: 6 },
-        { symbol: 'SPELL', name: 'Spell Token', balance: (Math.random() * 10000).toFixed(0), decimals: 18 }
-      ],
-      base: [
-        { symbol: 'ETH', name: 'Ethereum', balance: Math.random().toFixed(4), decimals: 18 },
-        { symbol: 'BASE', name: 'Base', balance: (Math.random() * 1000).toFixed(4), decimals: 18 },
-        { symbol: 'USDC', name: 'USD Coin', balance: (Math.random() * 1000).toFixed(2), decimals: 6 }
-      ]
-    };
+    // If no tokens are tracked yet, use defaults
+    if (storedTokens.length === 0) {
+      const defaultTokens = getDefaultTokensForChain(chain);
+      return defaultTokens.map(token => ({
+        ...token,
+        balance: generateRandomBalance(token.symbol, chain)
+      }));
+    }
     
-    return tokenData[chain] || tokenData.ethereum;
+    // Otherwise, return the stored tokens with balances
+    return storedTokens.map(token => ({
+      ...token,
+      balance: generateRandomBalance(token.symbol, chain)
+    }));
   } catch (error) {
     console.error('Error getting token balances:', error);
     return [];
+  }
+}
+
+// Get tracked tokens from storage
+async function getTrackedTokens(chain) {
+  const result = await chrome.storage.local.get([`tracked_tokens_${chain}`]);
+  return result[`tracked_tokens_${chain}`] || [];
+}
+
+// Set tracked tokens in storage
+async function setTrackedTokens(chain, tokens) {
+  await chrome.storage.local.set({ [`tracked_tokens_${chain}`]: tokens });
+}
+
+// Get default tokens for each chain
+function getDefaultTokensForChain(chain) {
+  const defaults = {
+    ethereum: [
+      { symbol: 'ETH', name: 'Ethereum', contractAddress: 'native', decimals: 18 },
+      { symbol: 'USDT', name: 'Tether USD', contractAddress: '0xdAC17F958D2ee523a2206206994597C13D831ec7', decimals: 6 },
+      { symbol: 'USDC', name: 'USD Coin', contractAddress: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', decimals: 6 },
+      { symbol: 'DAI', name: 'Dai Stablecoin', contractAddress: '0x6B175474E89094C44Da98b954EedeAC495271d0F', decimals: 18 },
+      { symbol: 'WBTC', name: 'Wrapped Bitcoin', contractAddress: '0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599', decimals: 8 },
+      { symbol: 'UNI', name: 'Uniswap', contractAddress: '0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984', decimals: 18 },
+      { symbol: 'LINK', name: 'ChainLink Token', contractAddress: '0x514910771AF9Ca656af840dff83E8264EcF986CA', decimals: 18 },
+      { symbol: 'MATIC', name: 'Matic Token', contractAddress: '0x7D1AfA7B718fb893dB30A3aBc0Cfc608AaCfeBB0', decimals: 18 }
+    ],
+    polygon: [
+      { symbol: 'MATIC', name: 'Matic Token', contractAddress: 'native', decimals: 18 },
+      { symbol: 'USDT', name: 'Tether USD', contractAddress: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F', decimals: 6 },
+      { symbol: 'USDC', name: 'USD Coin', contractAddress: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174', decimals: 6 },
+      { symbol: 'DAI', name: 'Dai Stablecoin', contractAddress: '0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063', decimals: 18 },
+      { symbol: 'WMATIC', name: 'Wrapped Matic', contractAddress: '0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270', decimals: 18 },
+      { symbol: 'WETH', name: 'Wrapped Ether', contractAddress: '0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619', decimals: 18 },
+      { symbol: 'QUICK', name: 'Quickswap', contractAddress: '0xB5C064F955D8e7F38fE0460C556a72987494eE30', decimals: 18 },
+      { symbol: 'AAVE', name: 'Aave', contractAddress: '0xD6DF932A45C0f255f85145f286eA0b292B21C90B', decimals: 18 }
+    ],
+    bsc: [
+      { symbol: 'BNB', name: 'Binance Coin', contractAddress: 'native', decimals: 18 },
+      { symbol: 'BUSD', name: 'Binance USD', contractAddress: '0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56', decimals: 18 },
+      { symbol: 'USDT', name: 'Tether USD', contractAddress: '0x55d398326f99059fF775485246999027B3197955', decimals: 18 },
+      { symbol: 'USDC', name: 'USD Coin', contractAddress: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', decimals: 18 },
+      { symbol: 'CAKE', name: 'PancakeSwap Token', contractAddress: '0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82', decimals: 18 },
+      { symbol: 'XVS', name: 'Venus', contractAddress: '0xcF6BB5389c92Bdda8a3747Ddb454cB7a64626C63', decimals: 18 },
+      { symbol: 'ADA', name: 'Cardano Token', contractAddress: '0x3EE2200Efb0CB97490C1d41b68095C1037467185', decimals: 18 },
+      { symbol: 'DOT', name: 'Polkadot Token', contractAddress: '0x7083609fCE4d1d8Dc0C979AAb8c869Ea2C873402', decimals: 18 }
+    ],
+    arbitrum: [
+      { symbol: 'ETH', name: 'Ethereum', contractAddress: 'native', decimals: 18 },
+      { symbol: 'USDC', name: 'USD Coin', contractAddress: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', decimals: 6 },
+      { symbol: 'USDT', name: 'Tether USD', contractAddress: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9', decimals: 6 },
+      { symbol: 'ARB', name: 'Arbitrum', contractAddress: '0x912CE59144191C1204E64559FE8253a0e49E6548', decimals: 18 },
+      { symbol: 'GMX', name: 'GMX', contractAddress: '0xfc5A1A6EB076a2C7aD06eD22C90d7E710E35ad0a', decimals: 18 },
+      { symbol: 'DPX', name: 'Dopex', contractAddress: '0x6C2C06790b3E4d0bBc5b8F2cD37540485dC1bEF8', decimals: 18 },
+      { symbol: 'RDNT', name: 'Radiant Capital', contractAddress: '0x3082CC23568eA640225c2467653dBd76Eb52b29d', decimals: 18 },
+      { symbol: 'JOE', name: 'JoeToken (Arb.)', contractAddress: '0x3CC1A3cEb86Fe2bA24d5C87C56Ac501dEdDE9020', decimals: 18 }
+    ],
+    optimism: [
+      { symbol: 'ETH', name: 'Ethereum', contractAddress: 'native', decimals: 18 },
+      { symbol: 'OP', name: 'Optimism', contractAddress: '0x4200000000000000000000000000000000000042', decimals: 18 },
+      { symbol: 'USDC', name: 'USD Coin', contractAddress: '0x7F5c764cBc14f9669B88837ca1490cCa17c31607', decimals: 6 },
+      { symbol: 'USDT', name: 'Tether USD', contractAddress: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58', decimals: 6 },
+      { symbol: 'SNX', name: 'Synthetix', contractAddress: '0x8700dAec35aF8Ff88c1cFd7F3C6E2cBB6e0D5a9A', decimals: 18 },
+      { symbol: 'SNX', name: 'Synthetix', contractAddress: '0x8700dAec35aF8Ff88c1cFd7F3C6E2cBB6e0D5a9A', decimals: 18 },
+      { symbol: 'WETH', name: 'Wrapped Ether', contractAddress: '0x4200000000000000000000000000000000000006', decimals: 18 },
+      { symbol: 'WBTC', name: 'Wrapped BTC', contractAddress: '0x68f180fcCe6836688e9084f08b44a8270D797C3D', decimals: 8 }
+    ],
+    avalanche: [
+      { symbol: 'AVAX', name: 'Avalanche', contractAddress: 'native', decimals: 18 },
+      { symbol: 'USDC', name: 'USD Coin', contractAddress: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E', decimals: 6 },
+      { symbol: 'USDT', name: 'Tether USD', contractAddress: '0x9702230A888CAdCde16C8658D37D649b7E22a36C', decimals: 6 },
+      { symbol: 'JOE', name: 'JoeToken', contractAddress: '0x6e84a6216eA6DACC71eE8E6b0a5B7322EEbC0fDd', decimals: 18 },
+      { symbol: 'GMX', name: 'GMX (Avax)', contractAddress: '0x62edc0692BD897D2295872a9FFCac5425011c661', decimals: 18 },
+      { symbol: 'PNG', name: 'Pangolin', contractAddress: '0x60781C2586D68229fde47564546784ab3fACA982', decimals: 18 },
+      { symbol: 'AAVE', name: 'Aave Token', contractAddress: '0x63a72806098Bd3D9520cC43356dD78afe5D386D9', decimals: 18 },
+      { symbol: 'WAVAX', name: 'Wrapped AVAX', contractAddress: '0xB31f66AA3C1e785363F0875A1B74E27b85FD66c7', decimals: 18 }
+    ],
+    fantom: [
+      { symbol: 'FTM', name: 'Fantom', contractAddress: 'native', decimals: 18 },
+      { symbol: 'USDC', name: 'USD Coin', contractAddress: '0x04068DA6C83AFCFA0e13ba15A6696662335D5B75', decimals: 6 },
+      { symbol: 'USDT', name: 'Tether USD', contractAddress: '0x049d68029688eAbF473097a2fC38ef61633A3C7A', decimals: 6 },
+      { symbol: 'fUSDT', name: 'Frapped USDT', contractAddress: '0x049d68029688eAbF473097a2fC38ef61633A3C7A', decimals: 6 },
+      { symbol: 'SPIRIT', name: 'SpiritSwap Token', contractAddress: '0x5Cc61A78F164885776AA610fb0FE1257d23d38D8', decimals: 18 },
+      { symbol: 'SUSHI', name: 'SushiToken', contractAddress: '0xae75A438b2E0cB8BbA9d6A32842C0DfD9c586CFa', decimals: 18 },
+      { symbol: 'BOO', name: 'SpookyToken', contractAddress: '0x841FAD6EAe12c294c3bA51e97a4bBeDBb0eecaDd', decimals: 18 },
+      { symbol: 'SPELL', name: 'Spell Token', contractAddress: '0x468003B688943977e6130F4F68F23faA961dCbe1', decimals: 18 }
+    ],
+    base: [
+      { symbol: 'ETH', name: 'Ethereum', contractAddress: 'native', decimals: 18 },
+      { symbol: 'USDC', name: 'USD Coin', contractAddress: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', decimals: 6 },
+      { symbol: 'BASE', name: 'Base Token', contractAddress: '0x1DD80372C6b301b09365167b7409d544c04c9130', decimals: 18 },
+      { symbol: 'WETH', name: 'Wrapped Ether', contractAddress: '0x4200000000000000000000000000000000000006', decimals: 18 },
+      { symbol: 'CBETH', name: 'Coinbase Wrapped Staked ETH', contractAddress: '0x2Ae3F1Ec7F1F5012CFEab0185bfc7aA9CF00b4C2', decimals: 18 },
+      { symbol: 'AERO', name: 'Aerodrome', contractAddress: '0x940188DB233b3DdCb99423FcDB0Ae697C3c6795e', decimals: 18 },
+      { symbol: 'USDbC', name: 'USD Base Coin', contractAddress: '0xd9aAEc86B65D86f6A7B5B1b0c42FFA531710b6CA', decimals: 6 },
+      { symbol: 'COMP', name: 'Compound', contractAddress: '0x9e1028F5F1D5eDE59748FFceE5532509976840E0', decimals: 18 }
+    ]
+  };
+  
+  return defaults[chain] || defaults.ethereum;
+}
+
+// Generate random balance for demo purposes
+function generateRandomBalance(symbol, chain) {
+  // Different ranges for different token types
+  if (['ETH', 'MATIC', 'BNB', 'AVAX', 'FTM', 'ARB', 'OP'].includes(symbol)) {
+    // Native tokens - smaller amounts
+    return (Math.random() * 5).toFixed(symbol === 'WBTC' || symbol === 'BTC' ? 6 : 4);
+  } else if (['USDT', 'USDC', 'DAI', 'BUSD'].includes(symbol)) {
+    // Stablecoins - wider range
+    return (Math.random() * 10000).toFixed(2);
+  } else {
+    // Other tokens - vary by token
+    const multipliers = {
+      'WBTC': 0.01,
+      'LINK': 5,
+      'UNI': 10,
+      'CAKE': 50,
+      'SUSHI': 20,
+      'SPELL': 10000,
+      'GMX': 1
+    };
+    const multiplier = multipliers[symbol] || 10;
+    return (Math.random() * multiplier).toFixed(symbol === 'WBTC' ? 6 : 4);
+  }
+}
+
+// Function to add a new token to a user's portfolio
+async function addTokenToPortfolio(chain, token) {
+  try {
+    let trackedTokens = await getTrackedTokens(chain);
+    
+    // Check if token already exists
+    const existingToken = trackedTokens.find(t => t.contractAddress === token.contractAddress);
+    if (existingToken) {
+      console.log(`Token ${token.symbol} already exists in portfolio`);
+      return { success: false, error: 'Token already in portfolio' };
+    }
+    
+    // Add the new token
+    trackedTokens.push(token);
+    await setTrackedTokens(chain, trackedTokens);
+    
+    return { success: true, message: `Successfully added ${token.symbol} to portfolio` };
+  } catch (error) {
+    console.error('Error adding token to portfolio:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Function to remove a token from user's portfolio
+async function removeTokenFromPortfolio(chain, contractAddress) {
+  try {
+    let trackedTokens = await getTrackedTokens(chain);
+    
+    // Filter out the token to remove
+    trackedTokens = trackedTokens.filter(token => token.contractAddress !== contractAddress);
+    await setTrackedTokens(chain, trackedTokens);
+    
+    return { success: true, message: 'Successfully removed token from portfolio' };
+  } catch (error) {
+    console.error('Error removing token from portfolio:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Function to search for tokens on a specific chain
+async function searchTokens(chain, query) {
+  const defaultTokens = getDefaultTokensForChain(chain);
+  const userTokens = await getTrackedTokens(chain);
+  
+  // Combine user tokens and default tokens
+  const allTokens = [...new Map([...defaultTokens, ...userTokens].map(item => [item.contractAddress, item])).values()];
+  
+  // Filter based on search query
+  const filtered = allTokens.filter(token => 
+    token.symbol.toLowerCase().includes(query.toLowerCase()) || 
+    token.name.toLowerCase().includes(query.toLowerCase())
+  );
+  
+  return filtered.slice(0, 10); // Limit to top 10 matches
+}
+
+// Function to get common tokens for a chain
+async function getCommonTokensForChain(chain) {
+  const defaultTokens = getDefaultTokensForChain(chain);
+  const userTokens = await getTrackedTokens(chain);
+  
+  // Return top tokens combining defaults and user's additions
+  return [...new Map([...defaultTokens, ...userTokens].map(item => [item.contractAddress, item])).values()].slice(0, 8);
+}
+
+// Function to import a token portfolio
+async function importTokenPortfolio(chain, tokenList) {
+  try {
+    // Get current tracked tokens
+    let trackedTokens = await getTrackedTokens(chain);
+    
+    // Add new tokens, avoiding duplicates
+    for (const token of tokenList) {
+      const exists = trackedTokens.some(t => t.contractAddress === token.contractAddress);
+      if (!exists) {
+        trackedTokens.push(token);
+      }
+    }
+    
+    // Save updated list
+    await setTrackedTokens(chain, trackedTokens);
+    
+    return { success: true, message: `Successfully imported ${tokenList.length} tokens` };
+  } catch (error) {
+    console.error('Error importing token portfolio:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+// Function to export a token portfolio
+async function exportTokenPortfolio(chain) {
+  try {
+    const tokens = await getTrackedTokens(chain);
+    return {
+      success: true,
+      tokens: tokens,
+      chain: chain,
+      exportedAt: new Date().toISOString()
+    };
+  } catch (error) {
+    console.error('Error exporting token portfolio:', error);
+    return { success: false, error: error.message };
   }
 }
 

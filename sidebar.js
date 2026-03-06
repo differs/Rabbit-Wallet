@@ -646,11 +646,399 @@ function getTokenIconClass(symbol) {
     'BUSD': 'busd',
     'CAKE': 'cake',
     'JOE': 'joe',
-    'SPELL': 'spell'
+    'SPELL': 'spell',
+    'WETH': 'eth',
+    'WMATIC': 'polygon',
+    'QUICK': 'polygon',
+    'AAVE': 'eth',
+    'XVS': 'bsc',
+    'ADA': 'bsc',
+    'DOT': 'bsc',
+    'GMX': 'arbitrum',
+    'DPX': 'arbitrum',
+    'RDNT': 'arbitrum',
+    'SNX': 'optimism',
+    'PNG': 'avalanche',
+    'WAVAX': 'avalanche',
+    'SPIRIT': 'fantom',
+    'BOO': 'fantom',
+    'COMP': 'eth',
+    'CBETH': 'eth',
+    'AERO': 'base',
+    'USDbC': 'base',
+    'fUSDT': 'fantom'
   };
   
   return symbols[symbol.toUpperCase()] || 'default';
 }
+
+// Add token management functionality
+document.addEventListener('DOMContentLoaded', () => {
+  // ... existing code ...
+
+  // Add token search functionality if on tokens tab
+  setupTokenManagement();
+});
+
+// Set up token management UI
+function setupTokenManagement() {
+  // Create add token button in the token section
+  const tokensTab = document.getElementById('tokens-tab');
+  if (tokensTab) {
+    // Create search token bar
+    const searchContainer = document.createElement('div');
+    searchContainer.className = 'token-search-container';
+    searchContainer.innerHTML = `
+      <div class="search-bar">
+        <input type="text" id="tokenSearch" placeholder="Search tokens..." />
+        <button id="addTokenBtn" class="add-token-btn">Add Token</button>
+      </div>
+      <div class="token-management-buttons">
+        <button id="importTokensBtn" class="management-btn">Import Tokens</button>
+        <button id="exportTokensBtn" class="management-btn">Export Tokens</button>
+      </div>
+      <div id="searchResults" class="search-results" style="display: none;"></div>
+    `;
+    
+    // Insert after the h3 element
+    const h3Element = tokensTab.querySelector('h3');
+    if (h3Element) {
+      h3Element.insertAdjacentElement('afterend', searchContainer);
+      
+      // Add event listeners
+      document.getElementById('tokenSearch').addEventListener('input', handleTokenSearch);
+      document.getElementById('addTokenBtn').addEventListener('click', showAddTokenModal);
+      document.getElementById('importTokensBtn').addEventListener('click', showImportTokensModal);
+      document.getElementById('exportTokensBtn').addEventListener('click', exportTokens);
+    }
+  }
+}
+
+// Show import tokens modal
+function showImportTokensModal() {
+  const modalOverlay = document.createElement('div');
+  modalOverlay.className = 'modal-overlay';
+  modalOverlay.id = 'importTokensModal';
+  modalOverlay.style.display = 'flex';
+  
+  modalOverlay.innerHTML = `
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Import Tokens</h3>
+        <span class="close-modal" id="closeImportTokens">&times;</span>
+      </div>
+      <div class="modal-body">
+        <div class="input-group">
+          <label for="importTokensData">Paste Token Data (JSON format)</label>
+          <textarea id="importTokensData" rows="8" placeholder='[{ "contractAddress": "...", "symbol": "...", "name": "...", "decimals": 18 }, ...]'></textarea>
+        </div>
+        <button class="action-btn import-tokens-btn" id="doImportTokens">Import Tokens</button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modalOverlay);
+  
+  // Add event listeners
+  document.getElementById('closeImportTokens').addEventListener('click', () => {
+    document.body.removeChild(modalOverlay);
+  });
+  
+  document.getElementById('doImportTokens').addEventListener('click', importTokensData);
+}
+
+// Import tokens from JSON data
+async function importTokensData() {
+  const tokenDataStr = document.getElementById('importTokensData').value.trim();
+  
+  if (!tokenDataStr) {
+    alert('Please enter token data to import');
+    return;
+  }
+  
+  try {
+    const tokenData = JSON.parse(tokenDataStr);
+    
+    if (!Array.isArray(tokenData)) {
+      alert('Token data must be an array of token objects');
+      return;
+    }
+    
+    // Validate each token object
+    for (const token of tokenData) {
+      if (!token.contractAddress || !token.symbol || !token.name || typeof token.decimals === 'undefined') {
+        alert(`Invalid token object: ${JSON.stringify(token)}. Must include contractAddress, symbol, name, and decimals.`);
+        return;
+      }
+    }
+    
+    // Send to background to import
+    chrome.runtime.sendMessage({
+      action: 'importTokenPortfolio',
+      chain: localStorage.getItem('network') || 'ethereum',
+      tokenList: tokenData
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('Error importing tokens:', chrome.runtime.lastError);
+        alert('Error importing tokens: ' + chrome.runtime.lastError.message);
+        return;
+      }
+      
+      if (response && response.success) {
+        alert(response.message);
+        // Close modal
+        const modal = document.getElementById('importTokensModal');
+        if (modal && modal.parentNode) {
+          modal.parentNode.removeChild(modal);
+        }
+        // Refresh token list
+        loadTokenBalances();
+      } else {
+        alert('Error importing tokens: ' + response.error);
+      }
+    });
+  } catch (error) {
+    alert('Invalid JSON format: ' + error.message);
+  }
+}
+
+// Export tokens
+async function exportTokens() {
+  chrome.runtime.sendMessage({
+    action: 'exportTokenPortfolio',
+    chain: localStorage.getItem('network') || 'ethereum'
+  }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('Error exporting tokens:', chrome.runtime.lastError);
+      alert('Error exporting tokens: ' + chrome.runtime.lastError.message);
+      return;
+    }
+    
+    if (response && response.success) {
+      // Create and download the JSON file
+      const dataStr = JSON.stringify(response.tokens, null, 2);
+      const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+      
+      const exportFileDefaultName = `rabbit-wallet-tokens-${response.chain}-${new Date().toISOString().split('T')[0]}.json`;
+      
+      const linkElement = document.createElement('a');
+      linkElement.setAttribute('href', dataUri);
+      linkElement.setAttribute('download', exportFileDefaultName);
+      linkElement.click();
+    } else {
+      alert('Error exporting tokens: ' + response.error);
+    }
+  });
+}
+
+// Handle token search
+async function handleTokenSearch(e) {
+  const query = e.target.value.trim();
+  const searchResults = document.getElementById('searchResults');
+  
+  if (query.length < 2) {
+    searchResults.style.display = 'none';
+    return;
+  }
+  
+  // Send search request to background
+  chrome.runtime.sendMessage({
+    action: 'searchTokens',
+    chain: localStorage.getItem('network') || 'ethereum',
+    query: query
+  }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('Error searching tokens:', chrome.runtime.lastError);
+      return;
+    }
+    
+    if (response && response.tokens) {
+      displaySearchResults(response.tokens, searchResults);
+    }
+  });
+}
+
+// Display search results
+function displaySearchResults(tokens, container) {
+  if (tokens.length === 0) {
+    container.innerHTML = '<div class="no-results">No tokens found</div>';
+    container.style.display = 'block';
+    return;
+  }
+  
+  let resultsHtml = '<div class="search-results-list">';
+  tokens.forEach(token => {
+    const tokenIconClass = getTokenIconClass(token.symbol);
+    resultsHtml += `
+      <div class="search-result-item" data-token='${JSON.stringify(token)}'>
+        <div class="token-icon ${tokenIconClass}">${token.symbol.charAt(0)}</div>
+        <div class="token-info">
+          <div class="token-name">${token.name}</div>
+          <div class="token-symbol">${token.symbol}</div>
+        </div>
+        <button class="add-searched-token-btn">Add</button>
+      </div>
+    `;
+  });
+  resultsHtml += '</div>';
+  
+  container.innerHTML = resultsHtml;
+  container.style.display = 'block';
+  
+  // Add click listeners to the add buttons
+  container.querySelectorAll('.add-searched-token-btn').forEach(button => {
+    button.addEventListener('click', (e) => {
+      const tokenItem = e.target.closest('.search-result-item');
+      const token = JSON.parse(tokenItem.dataset.token);
+      addTokenToPortfolio(token);
+    });
+  });
+}
+
+// Show add token modal
+function showAddTokenModal() {
+  const modalOverlay = document.createElement('div');
+  modalOverlay.className = 'modal-overlay';
+  modalOverlay.id = 'addTokenModal';
+  modalOverlay.style.display = 'flex';
+  
+  modalOverlay.innerHTML = `
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Add Custom Token</h3>
+        <span class="close-modal" id="closeAddToken">&times;</span>
+      </div>
+      <div class="modal-body">
+        <div class="input-group">
+          <label for="tokenContract">Token Contract Address</label>
+          <input type="text" id="tokenContract" placeholder="0x..." />
+        </div>
+        <div class="input-group">
+          <label for="tokenSymbol">Token Symbol</label>
+          <input type="text" id="tokenSymbol" placeholder="e.g. ABC" />
+        </div>
+        <div class="input-group">
+          <label for="tokenDecimals">Decimals</label>
+          <input type="number" id="tokenDecimals" placeholder="18" value="18" min="0" max="18"/>
+        </div>
+        <div class="input-group">
+          <label for="tokenName">Token Name</label>
+          <input type="text" id="tokenName" placeholder="e.g. ABC Token" />
+        </div>
+        <button class="action-btn add-custom-token" id="addCustomToken">Add Token</button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modalOverlay);
+  
+  // Add event listeners
+  document.getElementById('closeAddToken').addEventListener('click', () => {
+    document.body.removeChild(modalOverlay);
+  });
+  
+  document.getElementById('addCustomToken').addEventListener('click', addCustomToken);
+}
+
+// Add custom token
+async function addCustomToken() {
+  const contract = document.getElementById('tokenContract').value.trim();
+  const symbol = document.getElementById('tokenSymbol').value.trim();
+  const decimals = document.getElementById('tokenDecimals').value;
+  const name = document.getElementById('tokenName').value.trim();
+  
+  // Basic validation
+  if (!contract || !symbol || !name) {
+    alert('Please fill in all required fields');
+    return;
+  }
+  
+  // Basic address validation
+  if (!contract.startsWith('0x') || contract.length !== 42) {
+    alert('Please enter a valid contract address');
+    return;
+  }
+  
+  if (isNaN(decimals) || decimals < 0 || decimals > 18) {
+    alert('Decimals must be between 0 and 18');
+    return;
+  }
+  
+  // Send to background to add to portfolio
+  chrome.runtime.sendMessage({
+    action: 'addTokenToPortfolio',
+    chain: localStorage.getItem('network') || 'ethereum',
+    token: {
+      contractAddress: contract,
+      symbol: symbol.toUpperCase(),
+      name: name,
+      decimals: parseInt(decimals)
+    }
+  }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('Error adding custom token:', chrome.runtime.lastError);
+      alert('Error adding token: ' + chrome.runtime.lastError.message);
+      return;
+    }
+    
+    if (response && response.success) {
+      alert(response.message);
+      // Close modal
+      const modal = document.getElementById('addTokenModal');
+      if (modal && modal.parentNode) {
+        modal.parentNode.removeChild(modal);
+      }
+      // Refresh token list
+      loadTokenBalances();
+    } else {
+      alert('Error adding token: ' + response.error);
+    }
+  });
+}
+
+// Add token to portfolio from search
+async function addTokenToPortfolio(token) {
+  chrome.runtime.sendMessage({
+    action: 'addTokenToPortfolio',
+    chain: localStorage.getItem('network') || 'ethereum',
+    token: token
+  }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('Error adding token:', chrome.runtime.lastError);
+      alert('Error adding token: ' + chrome.runtime.lastError.message);
+      return;
+    }
+    
+    if (response && response.success) {
+      alert(response.message);
+      // Hide search results
+      document.getElementById('searchResults').style.display = 'none';
+      // Refresh token list
+      loadTokenBalances();
+    } else {
+      alert('Error adding token: ' + response.error);
+    }
+  });
+}
+
+// Add message handlers to the main message listener
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  // ... existing handlers ...
+  
+  if (request.action === 'searchTokens') {
+    searchTokens(request.chain, request.query).then(results => {
+      sendResponse({ tokens: results });
+    });
+    return true; // Keep message channel open for async response
+  }
+  
+  if (request.action === 'addTokenToPortfolio') {
+    addTokenToPortfolio(request.chain, request.token).then(response => {
+      sendResponse(response);
+    });
+    return true; // Keep message channel open for async response
+  }
+});
 
 // Get chain symbol based on network
 function getChainSymbol(network) {
