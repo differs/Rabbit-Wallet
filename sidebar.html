@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ETH Wallet Plugin</title>
+  <link rel="stylesheet" href="sidebar.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+  <div class="wallet-container">
+    <!-- Header with wallet connection -->
+    <header class="wallet-header">
+      <div class="wallet-info">
+        <div class="wallet-status" id="walletStatus">
+          <span class="status-indicator disconnected"></span>
+          <span class="status-text">Disconnected</span>
+        </div>
+        <div class="wallet-address" id="walletAddress">Connect Wallet</div>
+      </div>
+      <button class="connect-btn" id="connectBtn">Connect</button>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <nav class="tabs-nav">
+      <button class="tab-btn active" data-tab="stats">STATS</button>
+      <button class="tab-btn" data-tab="rewards">REWARDS</button>
+      <button class="tab-btn" data-tab="tokens">TOKENS</button>
+      <button class="tab-btn" data-tab="defi">DEFI</button>
+      <button class="tab-btn" data-tab="nfts">NFTS</button>
+      <button class="tab-btn" data-tab="activity">ACTIVITY</button>
+    </nav>
+
+    <!-- Tab Content -->
+    <main class="tab-content">
+      <!-- Stats Tab -->
+      <div class="tab-panel active" id="stats-tab">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-value" id="intercepted-count">414,003</div>
+            <div class="stat-label">Intercepted</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="saved-data">5.63 GB</div>
+            <div class="stat-label">Saved Data</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value" id="saved-time">5.8 Hours</div>
+            <div class="stat-label">Saved Time</div>
+          </div>
+        </div>
+
+        <div class="wallet-section">
+          <h3>Your Wallet</h3>
+          <div class="wallet-balance">
+            <div class="balance-amount" id="walletBalance">0.0000 ETH</div>
+            <div class="balance-usd" id="walletBalanceUsd">$0.00</div>
+          </div>
+          <div class="wallet-actions">
+            <button class="action-btn deposit"><i class="fas fa-arrow-down"></i> Deposit</button>
+            <button class="action-btn withdraw"><i class="fas fa-arrow-up"></i> Withdraw</button>
+          </div>
+        </div>
+
+        <div class="earn-section">
+          <h3>Ready to start earning?</h3>
+          <button class="exchange-btn" id="exchangeBtn">Exchange</button>
+        </div>
+      </div>
+
+      <!-- Rewards Tab -->
+      <div class="tab-panel" id="rewards-tab">
+        <h3>Available Rewards</h3>
+        <div class="rewards-list">
+          <div class="reward-item">
+            <div class="reward-icon"><i class="fas fa-coins"></i></div>
+            <div class="reward-info">
+              <div class="reward-title">Daily Bonus</div>
+              <div class="reward-desc">Earn tokens for daily usage</div>
+            </div>
+            <button class="claim-btn">Claim</button>
+          </div>
+          <div class="reward-item">
+            <div class="reward-icon"><i class="fas fa-rocket"></i></div>
+            <div class="reward-info">
+              <div class="reward-title">Referral Program</div>
+              <div class="reward-desc">Invite friends and earn rewards</div>
+            </div>
+            <button class="claim-btn">Claim</button>
+          </div>
+          <div class="reward-item">
+            <div class="reward-icon"><i class="fas fa-shield-alt"></i></div>
+            <div class="reward-info">
+              <div class="reward-title">Security Reward</div>
+              <div class="reward-desc">For using enhanced security</div>
+            </div>
+            <button class="claim-btn">Claim</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tokens Tab -->
+      <div class="tab-panel" id="tokens-tab">
+        <h3>Your Tokens</h3>
+        <div class="token-list">
+          <div class="token-item">
+            <div class="token-icon eth">E</div>
+            <div class="token-info">
+              <div class="token-name">Ethereum</div>
+              <div class="token-symbol">ETH</div>
+            </div>
+            <div class="token-balance" id="ethBalance">0.0000</div>
+          </div>
+          <div class="token-item">
+            <div class="token-icon usdc">U</div>
+            <div class="token-info">
+              <div class="token-name">USD Coin</div>
+              <div class="token-symbol">USDC</div>
+            </div>
+            <div class="token-balance">0.00</div>
+          </div>
+          <div class="token-item">
+            <div class="token-icon link">L</div>
+            <div class="token-info">
+              <div class="token-name">ChainLink</div>
+              <div class="token-symbol">LINK</div>
+            </div>
+            <div class="token-balance">0.0000</div>
+          </div>
+          <div class="token-item">
+            <div class="token-icon uni">U</div>
+            <div class="token-info">
+              <div class="token-name">Uniswap</div>
+              <div class="token-symbol">UNI</div>
+            </div>
+            <div class="token-balance">0.0000</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- DeFi Tab -->
+      <div class="tab-panel" id="defi-tab">
+        <h3>DeFi Opportunities</h3>
+        <div class="defi-opportunities">
+          <div class="opportunity-card">
+            <div class="opportunity-header">
+              <div class="opportunity-icon"><i class="fas fa-piggy-bank"></i></div>
+              <div class="opportunity-title">Staking Pool</div>
+            </div>
+            <div class="opportunity-details">
+              <div class="detail-row">
+                <span>APY:</span>
+                <span class="highlight">12.5%</span>
+              </div>
+              <div class="detail-row">
+                <span>TVL:</span>
+                <span>$2.4B</span>
+              </div>
+            </div>
+            <button class="action-btn stake">Stake</button>
+          </div>
+          <div class="opportunity-card">
+            <div class="opportunity-header">
+              <div class="opportunity-icon"><i class="fas fa-exchange-alt"></i></div>
+              <div class="opportunity-title">Yield Farming</div>
+            </div>
+            <div class="opportunity-details">
+              <div class="detail-row">
+                <span>APY:</span>
+                <span class="highlight">24.3%</span>
+              </div>
+              <div class="detail-row">
+                <span>Risk:</span>
+                <span>Medium</span>
+              </div>
+            </div>
+            <button class="action-btn farm">Farm</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- NFTs Tab -->
+      <div class="tab-panel" id="nfts-tab">
+        <h3>Your NFT Collection</h3>
+        <div class="nft-collection">
+          <div class="nft-placeholder">
+            <i class="fas fa-images"></i>
+            <p>No NFTs in your wallet</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Activity Tab -->
+      <div class="tab-panel" id="activity-tab">
+        <h3>Recent Activity</h3>
+        <div class="activity-list">
+          <div class="activity-item">
+            <div class="activity-icon received"><i class="fas fa-arrow-down"></i></div>
+            <div class="activity-info">
+              <div class="activity-title">Received ETH</div>
+              <div class="activity-desc">From: 0x1a2b...cdef</div>
+            </div>
+            <div class="activity-amount positive">+0.25 ETH</div>
+          </div>
+          <div class="activity-item">
+            <div class="activity-icon sent"><i class="fas fa-arrow-up"></i></div>
+            <div class="activity-info">
+              <div class="activity-title">Sent USDC</div>
+              <div class="activity-desc">To: 0x3f4e...ab5c</div>
+            </div>
+            <div class="activity-amount negative">-150.00 USDC</div>
+          </div>
+          <div class="activity-item">
+            <div class="activity-icon swap"><i class="fas fa-sync"></i></div>
+            <div class="activity-info">
+              <div class="activity-title">Swapped Tokens</div>
+              <div class="activity-desc">ETH to USDC</div>
+            </div>
+            <div class="activity-amount">-</div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="wallet-footer">
+      <div class="network-selector">
+        <select id="networkSelect">
+          <option value="ethereum">Ethereum Mainnet</option>
+          <option value="polygon">Polygon</option>
+          <option value="bsc">Binance Smart Chain</option>
+          <option value="arbitrum">Arbitrum</option>
+          <option value="optimism">Optimism</option>
+          <option value="avalanche">Avalanche</option>
+          <option value="fantom">Fantom</option>
+          <option value="base">Base</option>
+        </select>
+      </div>
+      <div class="plugin-info">
+        <span>ETH Wallet v1.0</span>
+      </div>
+    </footer>
+  </div>
+
+  <script src="sidebar.js"></script>
+</body>
+</html>
