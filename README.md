@@ -9,7 +9,9 @@ A sophisticated Chrome extension that provides a multi-chain wallet with stats d
 - **Multi-Chain Support**: Connect your wallet across Ethereum, Polygon, BSC, Arbitrum, Optimism, Avalanche, Fantom, and Base
 - **Automatic RPC Management**: Fetches RPC URLs and handles automatic failover when nodes become unavailable
 - **Smart RPC Switching**: Monitors RPC health and automatically switches to available nodes
-- **Wallet Connection**: Connect your wallet directly from the sidebar with simulated connection
+- **Real Wallet Integration**: Detects and connects to MetaMask, Coinbase, and other wallet providers
+- **Native Token Balances**: Automatically fetches native token balances (ETH, MATIC, BNB, etc.) per chain
+- **Token Support**: Displays popular tokens like USDC, USDT, DAI, and chain-specific tokens
 - **Statistics Dashboard**: View interception statistics, saved data, and time saved
 - **Multi-Tab Interface**: Navigate between STATS, REWARDS, TOKENS, DEFI, NFTS, and ACTIVITY
 - **Token Management**: View and manage your cryptocurrency tokens

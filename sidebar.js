@@ -165,14 +165,54 @@ function setupEventListeners() {
 }
 
 // Toggle wallet connection
-async function toggleWalletConnection() {
-  if (walletConnected) {
-    // Disconnect wallet
-    await disconnectWallet();
-  } else {
-    // Connect wallet
-    await connectWallet();
+async function connectWallet() {
+  try {
+    const selectedNetwork = networkSelect.value || localStorage.getItem('selectedNetwork') || 'ethereum';
+    
+    // Show connecting state
+    connectBtn.textContent = 'Connecting...';
+    connectBtn.disabled = true;
+    
+    // Request connection from background script
+    chrome.runtime.sendMessage({
+      action: 'connectWallet',
+      network: selectedNetwork
+    }, (response) => {
+      if (chrome.runtime.lastError) {
+        console.error('Error connecting wallet:', chrome.runtime.lastError);
+        alert('Error connecting wallet: ' + chrome.runtime.lastError.message);
+        connectBtn.textContent = 'Connect';
+        connectBtn.disabled = false;
+        return;
+      }
+      
+      if (response && response.success) {
+        walletConnected = true;
+        walletData = response;
+        console.log('Wallet connected successfully on network:', response.network);
+        // Update network selection to match connected network
+        networkSelect.value = response.network;
+        
+        // Update the display after a brief moment to allow for data sync
+        setTimeout(() => {
+          updateWalletDisplay();
+          loadTokenBalances(); // Load token balances after connection
+        }, 500);
+      } else {
+        console.error('Wallet connection failed:', response);
+        alert('Wallet connection failed: ' + (response?.error || 'Unknown error'));
+      }
+      
+      // Re-enable button
+      connectBtn.disabled = false;
+    });
+  } catch (error) {
+    console.error('Error connecting wallet:', error);
+    alert('Error connecting wallet: ' + error.message);
+    connectBtn.textContent = 'Connect';
+    connectBtn.disabled = false;
   }
+}
 }
 
 // Connect wallet
@@ -297,7 +337,7 @@ async function loadStoredData() {
 }
 
 // Update wallet display
-function updateWalletDisplay() {
+async function updateWalletDisplay() {
   if (walletConnected && walletData) {
     // Update wallet status
     const statusIndicator = walletStatusEl.querySelector('.status-indicator');
@@ -314,15 +354,24 @@ function updateWalletDisplay() {
     // Update chain-specific info
     const chainSymbol = getChainSymbol(walletData.network) || 'ETH';
     
-    // Update balance
-    const balance = parseFloat(walletData.balance).toFixed(4);
-    const usdBalance = (parseFloat(walletData.balance) * getApproximatePrice(walletData.network)).toFixed(2);
-    
-    walletBalanceEl.textContent = `${balance} ${chainSymbol}`;
-    walletBalanceUsdEl.textContent = `$${usdBalance}`;
-    
-    // Update ETH balance element (this would be the native token)
-    ethBalanceEl.textContent = balance;
+    // Update balance - get fresh balance from background
+    chrome.runtime.sendMessage({
+      action: 'getNativeTokenBalance'
+    }, (balanceResponse) => {
+      if (chrome.runtime.lastError) {
+        console.error('Error getting balance:', chrome.runtime.lastError);
+        return;
+      }
+      
+      if (balanceResponse && balanceResponse.balance) {
+        const balance = parseFloat(balanceResponse.balance).toFixed(4);
+        const usdBalance = (parseFloat(balanceResponse.balance) * getApproximatePrice(walletData.network)).toFixed(2);
+        
+        walletBalanceEl.textContent = `${balance} ${chainSymbol}`;
+        walletBalanceUsdEl.textContent = `$${usdBalance}`;
+        ethBalanceEl.textContent = balance;
+      }
+    });
     
     // Update connect button text
     connectBtn.textContent = 'Disconnect';
@@ -343,6 +392,77 @@ function updateWalletDisplay() {
     connectBtn.textContent = 'Connect';
     connectBtn.style.background = '';
   }
+}
+
+// Load token balances for the connected wallet
+async function loadTokenBalances() {
+  if (!walletConnected) return;
+  
+  chrome.runtime.sendMessage({
+    action: 'getTokenBalances'
+  }, (tokenResponse) => {
+    if (chrome.runtime.lastError) {
+      console.error('Error getting token balances:', chrome.runtime.lastError);
+      return;
+    }
+    
+    if (tokenResponse && tokenResponse.tokens) {
+      updateTokenList(tokenResponse.tokens);
+    }
+  });
+}
+
+// Update the token list in the UI
+function updateTokenList(tokens) {
+  const tokenListElement = document.querySelector('.token-list');
+  if (!tokenListElement) return;
+  
+  // Clear existing tokens
+  tokenListElement.innerHTML = '';
+  
+  // Add each token to the list
+  tokens.forEach(token => {
+    const tokenElement = document.createElement('div');
+    tokenElement.className = 'token-item';
+    
+    // Determine token icon based on symbol
+    const tokenIconClass = getTokenIconClass(token.symbol);
+    
+    tokenElement.innerHTML = `
+      <div class="token-icon ${tokenIconClass}">${token.symbol.charAt(0)}</div>
+      <div class="token-info">
+        <div class="token-name">${token.name}</div>
+        <div class="token-symbol">${token.symbol}</div>
+      </div>
+      <div class="token-balance">${parseFloat(token.balance).toLocaleString(undefined, { maximumFractionDigits: 6 })}</div>
+    `;
+    
+    tokenListElement.appendChild(tokenElement);
+  });
+}
+
+// Get appropriate icon class for token symbol
+function getTokenIconClass(symbol) {
+  const symbols = {
+    'ETH': 'eth',
+    'MATIC': 'polygon',
+    'BNB': 'bsc',
+    'ARB': 'arbitrum',
+    'OP': 'optimism',
+    'AVAX': 'avalanche',
+    'FTM': 'fantom',
+    'BASE': 'base',
+    'USDC': 'usdc',
+    'USDT': 'usdt',
+    'DAI': 'dai',
+    'WBTC': 'wbtc',
+    'BUSD': 'busd',
+    'CAKE': 'cake',
+    'JOE': 'joe',
+    'SPELL': 'spell'
+  };
+  
+  return symbols[symbol.toUpperCase()] || 'default';
 }
 
 // Get chain symbol based on network

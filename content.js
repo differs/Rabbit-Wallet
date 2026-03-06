@@ -3,46 +3,26 @@
 
 console.log('ETH Wallet Plugin content script loaded');
 
-// Inject wallet provider if needed (simulated)
-window.ethereum = window.ethereum || {
-  isMetaMask: true,
-  chainId: '0x1', // Ethereum mainnet
-  networkVersion: '1',
-  
-  // Mock request handler
-  request: async (args) => {
-    switch(args.method) {
-      case 'eth_requestAccounts':
-      case 'eth_accounts':
-        // Return a simulated account
-        return new Promise(resolve => {
-          setTimeout(() => {
-            const fakeAccount = '0x' + Math.random().toString(16).substr(2, 40);
-            resolve([fakeAccount]);
-          }, 300);
-        });
-        
-      case 'eth_getBalance':
-        // Return a simulated balance
-        return '0x' + Math.floor(Math.random() * 1000000000000000000).toString(16);
-        
-      case 'net_version':
-        return '1';
-        
-      default:
-        console.warn(`Unhandled method: ${args.method}`);
-        return null;
-    }
-  },
-  
-  // Mock event listeners
-  on: (event, handler) => {
-    console.log(`Listening for ${event}`);
-  }
-};
-
-// Listen for messages from sidebar
+// Message listener for requests from background script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.method === 'eth_requestAccounts') {
+    // Handle request for accounts
+    if (window.ethereum) {
+      window.ethereum.request({ method: 'eth_requestAccounts' })
+        .then(accounts => {
+          sendResponse(accounts);
+        })
+        .catch(error => {
+          console.error('Error requesting accounts:', error);
+          sendResponse(null);
+        });
+      return true; // Will respond asynchronously
+    } else {
+      // If no provider, return null
+      sendResponse(null);
+    }
+  }
+  
   if (request.action === 'interceptRequest') {
     // Simulate intercepting a request
     console.log('Intercepting request:', request.data);
@@ -55,4 +35,38 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     
     sendResponse({ success: true });
   }
+  
+  // Handle generic RPC requests
+  if (request.method && window.ethereum) {
+    window.ethereum.request(request)
+      .then(result => {
+        sendResponse(result);
+      })
+      .catch(error => {
+        console.error(`Error with RPC request ${request.method}:`, error);
+        sendResponse(null);
+      });
+    return true; // Will respond asynchronously
+  }
 });
+
+// Detect if wallet providers are available
+(function detectProviders() {
+  // Check for MetaMask
+  const isMetaMask = window.ethereum && window.ethereum.isMetaMask;
+  // Check for Coinbase
+  const isCoinbase = window.ethereum && window.ethereum.isCoinbaseWallet;
+  // Check for WalletConnect
+  const isWalletConnect = window.ethereum && window.ethereum.isWalletConnect;
+  
+  // Notify background of provider availability
+  chrome.runtime.sendMessage({
+    action: 'walletProvidersDetected',
+    providers: {
+      metamask: !!isMetaMask,
+      coinbase: !!isCoinbase,
+      walletconnect: !!isWalletConnect,
+      any: !!(window.ethereum)
+    }
+  });
+})();

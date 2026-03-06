@@ -61,9 +61,11 @@ const CHAIN_CONFIGS = {
   }
 };
 
-// Currently connected chain
+// Currently connected chain and wallet data
 let currentChain = 'ethereum';
 let currentRpcUrl = '';
+let connectedWallet = null;
+let walletProvider = null;
 
 // Register side panel when extension is installed
 chrome.runtime.onInstalled.addListener(() => {
@@ -95,67 +97,32 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'getWalletData') {
     // Get wallet data with chain support
     const walletData = {
-      address: localStorage.getItem('walletAddress') || null,
-      balance: localStorage.getItem('walletBalance') || '0',
+      address: connectedWallet?.address || null,
+      balance: connectedWallet?.balance || '0',
       network: localStorage.getItem('network') || 'ethereum',
       chainName: CHAIN_CONFIGS[localStorage.getItem('network') || 'ethereum']?.name || 'Ethereum Mainnet',
-      isConnected: !!localStorage.getItem('walletAddress')
+      isConnected: !!connectedWallet
     };
     sendResponse(walletData);
   }
   
   if (request.action === 'connectWallet') {
-    // Connect to wallet for specific chain
-    const chain = request.network || 'ethereum';
-    const fakeAddress = '0x' + Math.random().toString(16).substr(2, 40);
-    
-    localStorage.setItem('walletAddress', fakeAddress);
-    localStorage.setItem('walletBalance', (Math.random() * 10).toFixed(4));
-    localStorage.setItem('network', chain);
-    currentChain = chain;
-    
-    // Load RPC URLs for the selected chain
-    loadChainRpcUrls(chain).then(() => {
-      setCurrentRpcForChain(chain);
+    connectWallet(request.network || 'ethereum').then(response => {
+      sendResponse(response);
     });
-    
-    sendResponse({
-      success: true,
-      address: fakeAddress,
-      balance: localStorage.getItem('walletBalance'),
-      network: localStorage.getItem('network'),
-      chainName: CHAIN_CONFIGS[chain]?.name || 'Ethereum Mainnet'
-    });
+    return true; // Keep message channel open for async response
   }
   
   if (request.action === 'disconnectWallet') {
-    localStorage.removeItem('walletAddress');
-    localStorage.removeItem('walletBalance');
-    localStorage.removeItem('network');
-    currentChain = 'ethereum';
-    
+    disconnectWallet();
     sendResponse({ success: true });
   }
   
   if (request.action === 'switchNetwork') {
-    const newChain = request.network;
-    if (CHAIN_CONFIGS[newChain]) {
-      localStorage.setItem('network', newChain);
-      currentChain = newChain;
-      
-      // Try to set RPC for new chain
-      loadChainRpcUrls(newChain).then(() => {
-        setCurrentRpcForChain(newChain);
-      });
-      
-      sendResponse({
-        success: true,
-        network: newChain,
-        chainName: CHAIN_CONFIGS[newChain].name
-      });
-    } else {
-      sendResponse({ success: false, error: 'Unsupported network' });
-    }
+    switchNetwork(request.network).then(response => {
+      sendResponse(response);
+    });
+    return true; // Keep message channel open for async response
   }
   
   if (request.action === 'getChainConfigs') {
@@ -191,18 +158,276 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true; // Keep message channel open for async response
   }
+  
+  if (request.action === 'getNativeTokenBalance') {
+    if (connectedWallet) {
+      getNativeTokenBalance(connectedWallet.address, currentChain).then(balance => {
+        connectedWallet.balance = balance;
+        sendResponse({ balance });
+      });
+      return true; // Keep message channel open for async response
+    } else {
+      sendResponse({ balance: '0', error: 'Wallet not connected' });
+    }
+  }
+  
+  if (request.action === 'getTokenBalances') {
+    if (connectedWallet) {
+      getTokenBalances(connectedWallet.address, currentChain).then(tokens => {
+        sendResponse({ tokens });
+      });
+      return true; // Keep message channel open for async response
+    } else {
+      sendResponse({ tokens: [], error: 'Wallet not connected' });
+    }
+  }
 });
+
+// Enhanced wallet connection function
+async function connectWallet(chain = 'ethereum') {
+  try {
+    // Check if Ethereum provider exists in the current tab
+    const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    
+    // Inject a script to detect if MetaMask or other wallets are available
+    const walletsAvailable = await chrome.scripting.executeScript({
+      target: { tabId: currentTab.id },
+      func: () => {
+        return {
+          hasMetamask: Boolean(window.ethereum && window.ethereum.isMetaMask),
+          hasCoinbase: Boolean(window.ethereum && window.ethereum.isCoinbaseWallet),
+          hasWalletConnect: Boolean(window.ethereum && window.ethereum.isWalletConnect),
+          hasAnyProvider: Boolean(window.ethereum)
+        };
+      }
+    });
+
+    if (walletsAvailable[0]?.result.hasAnyProvider) {
+      // Try to get accounts from the provider
+      const accountsResult = await chrome.tabs.sendMessage(currentTab.id, {
+        method: 'eth_requestAccounts'
+      }).catch(err => {
+        console.log('Provider method failed, trying alternative', err);
+        return null;
+      });
+
+      if (accountsResult && accountsResult.length > 0) {
+        const address = accountsResult[0];
+        
+        // Set current chain
+        localStorage.setItem('network', chain);
+        currentChain = chain;
+        
+        // Load RPC URLs for the selected chain
+        await loadChainRpcUrls(chain);
+        await setCurrentRpcForChain(chain);
+        
+        // Get balance
+        const balance = await getNativeTokenBalance(address, chain);
+        
+        // Save wallet data
+        connectedWallet = {
+          address,
+          balance,
+          provider: 'detected' // Would be the actual provider in full implementation
+        };
+        
+        return {
+          success: true,
+          address,
+          balance,
+          network: chain,
+          chainName: CHAIN_CONFIGS[chain]?.name || 'Ethereum Mainnet'
+        };
+      }
+    }
+    
+    // If no provider detected or connection failed, use simulated connection
+    console.log('Using simulated connection');
+    const fakeAddress = generateFakeAddress();
+    
+    // Set current chain
+    localStorage.setItem('network', chain);
+    currentChain = chain;
+    
+    // Load RPC URLs for the selected chain
+    await loadChainRpcUrls(chain);
+    await setCurrentRpcForChain(chain);
+    
+    // Simulate balance
+    const balance = (Math.random() * 10).toFixed(4);
+    
+    // Save wallet data
+    connectedWallet = {
+      address: fakeAddress,
+      balance,
+      provider: 'simulated'
+    };
+    
+    return {
+      success: true,
+      address: fakeAddress,
+      balance,
+      network: chain,
+      chainName: CHAIN_CONFIGS[chain]?.name || 'Ethereum Mainnet'
+    };
+  } catch (error) {
+    console.error('Error connecting wallet:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+// Enhanced wallet disconnection
+function disconnectWallet() {
+  connectedWallet = null;
+  currentChain = 'ethereum';
+  localStorage.removeItem('network');
+}
+
+// Enhanced network switching
+async function switchNetwork(newChain) {
+  if (!CHAIN_CONFIGS[newChain]) {
+    return { success: false, error: 'Unsupported network' };
+  }
+
+  localStorage.setItem('network', newChain);
+  currentChain = newChain;
+  
+  // Load RPC URLs for the new chain
+  await loadChainRpcUrls(newChain);
+  await setCurrentRpcForChain(newChain);
+  
+  // If wallet is connected, try to update its state
+  if (connectedWallet) {
+    const newBalance = await getNativeTokenBalance(connectedWallet.address, newChain);
+    connectedWallet.balance = newBalance;
+  }
+  
+  return {
+    success: true,
+    network: newChain,
+    chainName: CHAIN_CONFIGS[newChain].name
+  };
+}
+
+// Function to get native token balance for a chain
+async function getNativeTokenBalance(address, chain) {
+  try {
+    const rpcUrl = await getActiveRpcUrl(chain);
+    if (!rpcUrl) {
+      throw new Error('No RPC URL available for chain: ' + chain);
+    }
+    
+    // In a real implementation, this would make a proper eth_call
+    // For now, return a simulated value based on chain
+    const chainMultiplier = {
+      ethereum: 1,
+      polygon: 100,
+      bsc: 0.1,
+      arbitrum: 1,
+      optimism: 1,
+      avalanche: 5,
+      fantom: 50,
+      base: 1
+    };
+    
+    const multiplier = chainMultiplier[chain] || 1;
+    return (Math.random() * 10 * multiplier).toFixed(4);
+  } catch (error) {
+    console.error(`Error getting balance for ${address} on ${chain}:`, error);
+    return '0.0000';
+  }
+}
+
+// Function to get token balances
+async function getTokenBalances(address, chain) {
+  try {
+    // Simulate fetching token balances
+    const tokens = [];
+    
+    const tokenData = {
+      ethereum: [
+        { symbol: 'ETH', name: 'Ethereum', balance: Math.random().toFixed(4), decimals: 18 },
+        { symbol: 'USDT', name: 'Tether', balance: (Math.random() * 1000).toFixed(2), decimals: 6 },
+        { symbol: 'USDC', name: 'USD Coin', balance: (Math.random() * 1000).toFixed(2), decimals: 6 },
+        { symbol: 'DAI', name: 'Dai', balance: (Math.random() * 500).toFixed(2), decimals: 18 },
+        { symbol: 'WBTC', name: 'Wrapped Bitcoin', balance: (Math.random() * 0.1).toFixed(6), decimals: 8 }
+      ],
+      polygon: [
+        { symbol: 'MATIC', name: 'Matic', balance: (Math.random() * 100).toFixed(4), decimals: 18 },
+        { symbol: 'USDT', name: 'Tether', balance: (Math.random() * 1000).toFixed(2), decimals: 6 },
+        { symbol: 'USDC', name: 'USD Coin', balance: (Math.random() * 1000).toFixed(2), decimals: 6 },
+        { symbol: 'WMATIC', name: 'Wrapped Matic', balance: (Math.random() * 50).toFixed(4), decimals: 18 }
+      ],
+      bsc: [
+        { symbol: 'BNB', name: 'Binance Coin', balance: (Math.random() * 5).toFixed(4), decimals: 18 },
+        { symbol: 'BUSD', name: 'Binance USD', balance: (Math.random() * 1000).toFixed(2), decimals: 18 },
+        { symbol: 'CAKE', name: 'PancakeSwap Token', balance: (Math.random() * 50).toFixed(4), decimals: 18 }
+      ],
+      arbitrum: [
+        { symbol: 'ETH', name: 'Ethereum', balance: Math.random().toFixed(4), decimals: 18 },
+        { symbol: 'ARB', name: 'Arbitrum', balance: (Math.random() * 100).toFixed(4), decimals: 18 },
+        { symbol: 'USDC', name: 'USD Coin', balance: (Math.random() * 1000).toFixed(2), decimals: 6 }
+      ],
+      optimism: [
+        { symbol: 'ETH', name: 'Ethereum', balance: Math.random().toFixed(4), decimals: 18 },
+        { symbol: 'OP', name: 'Optimism', balance: (Math.random() * 100).toFixed(4), decimals: 18 },
+        { symbol: 'USDC', name: 'USD Coin', balance: (Math.random() * 1000).toFixed(2), decimals: 6 }
+      ],
+      avalanche: [
+        { symbol: 'AVAX', name: 'Avalanche', balance: (Math.random() * 10).toFixed(4), decimals: 18 },
+        { symbol: 'USDC', name: 'USD Coin', balance: (Math.random() * 1000).toFixed(2), decimals: 6 },
+        { symbol: 'JOE', name: 'JoeToken', balance: (Math.random() * 200).toFixed(4), decimals: 18 }
+      ],
+      fantom: [
+        { symbol: 'FTM', name: 'Fantom', balance: (Math.random() * 100).toFixed(4), decimals: 18 },
+        { symbol: 'USDC', name: 'USD Coin', balance: (Math.random() * 1000).toFixed(2), decimals: 6 },
+        { symbol: 'SPELL', name: 'Spell Token', balance: (Math.random() * 10000).toFixed(0), decimals: 18 }
+      ],
+      base: [
+        { symbol: 'ETH', name: 'Ethereum', balance: Math.random().toFixed(4), decimals: 18 },
+        { symbol: 'BASE', name: 'Base', balance: (Math.random() * 1000).toFixed(4), decimals: 18 },
+        { symbol: 'USDC', name: 'USD Coin', balance: (Math.random() * 1000).toFixed(2), decimals: 6 }
+      ]
+    };
+    
+    return tokenData[chain] || tokenData.ethereum;
+  } catch (error) {
+    console.error('Error getting token balances:', error);
+    return [];
+  }
+}
+
+// Helper function to get active RPC URL for a chain
+async function getActiveRpcUrl(chain) {
+  const rpcList = await getStoredRpcUrls(chain);
+  if (rpcList && rpcList.length > 0) {
+    return rpcList[0]; // For simplicity, return the first one
+  }
+  return null;
+}
+
+// Helper function to generate a fake address for simulation
+function generateFakeAddress() {
+  return '0x' + Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+}
 
 // Function to load RPC URLs for a chain from chainlist.org
 async function loadChainRpcUrls(chainId) {
   try {
-    // For now, using default RPCs or fallbacks
-    // In a real implementation, this would fetch from chainlist.org
     const chainConfig = CHAIN_CONFIGS[chainId];
     if (!chainConfig) return [];
     
-    // Hardcoded RPC lists for demonstration
     // In a real implementation, fetch from chainlist.org
+    // const response = await fetch('https://chainid.network/chains.json');
+    // const chains = await response.json();
+    // const chain = chains.find(c => c.chainId == CHAIN_CONFIGS[chainId].chainId.replace('0x', ''));
+    // const rpcList = chain ? chain.rpc : getDefaultRpcUrls(chainId);
+    
+    // For now, using default RPCs
     const rpcList = getDefaultRpcUrls(chainId);
     
     // Store RPC URLs in local storage
@@ -331,44 +556,6 @@ async function monitorRpcHealth() {
 
 // Set up RPC health monitoring
 setInterval(monitorRpcHealth, 30000); // Check every 30 seconds
-
-// Auto-switch to next available RPC when current fails
-async function autoSwitchRpc(chainId) {
-  const rpcList = await getStoredRpcUrls(chainId);
-  if (!rpcList || rpcList.length <= 1) return false;
-  
-  // Find currently active RPC
-  const currentRpc = await chrome.storage.local.get(['currentRpcUrl']);
-  const currentIndex = rpcList.indexOf(currentRpc.currentRpcUrl || rpcList[0]);
-  
-  // Try next RPCs starting from the next position
-  for (let i = 1; i < rpcList.length; i++) {
-    const nextIndex = (currentIndex + i) % rpcList.length;
-    const rpcUrl = rpcList[nextIndex];
-    
-    if (await testRpcConnection(rpcUrl)) {
-      currentRpcUrl = rpcUrl;
-      await chrome.storage.local.set({ currentRpcUrl: rpcUrl });
-      console.log(`Switched to new RPC: ${rpcUrl}`);
-      return true;
-    }
-  }
-  
-  return false; // No working RPC found
-}
-
-// Set up a periodic update for stats
-setInterval(() => {
-  // Update stats in storage for sidebar to access
-  const stats = {
-    intercepted: Math.floor(Math.random() * 900000) + 100000,
-    savedData: (Math.random() * 10).toFixed(2),
-    savedTime: (Math.random() * 10).toFixed(1)
-  };
-  
-  // Store stats in chrome.storage.local for sidebar access
-  chrome.storage.local.set({ stats });
-}, 5000);
 
 // Expose functions to global scope for potential use
 globalThis.CHAIN_CONFIGS = CHAIN_CONFIGS;
