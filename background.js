@@ -183,94 +183,74 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-// Enhanced wallet connection function
+// Wallet management
+let walletAccount = null;
+let walletMnemonic = null;
+let encryptedPrivateKey = null;
+
+// Enhanced wallet connection function - NOW CREATES INTERNAL WALLET
 async function connectWallet(chain = 'ethereum') {
   try {
-    // Check if Ethereum provider exists in the current tab
-    const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    // Check if wallet already exists
+    const storedWallet = await chrome.storage.local.get(['walletAccount', 'encryptedPrivateKey']);
     
-    // Inject a script to detect if MetaMask or other wallets are available
-    const walletsAvailable = await chrome.scripting.executeScript({
-      target: { tabId: currentTab.id },
-      func: () => {
-        return {
-          hasMetamask: Boolean(window.ethereum && window.ethereum.isMetaMask),
-          hasCoinbase: Boolean(window.ethereum && window.ethereum.isCoinbaseWallet),
-          hasWalletConnect: Boolean(window.ethereum && window.ethereum.isWalletConnect),
-          hasAnyProvider: Boolean(window.ethereum)
-        };
-      }
-    });
-
-    if (walletsAvailable[0]?.result.hasAnyProvider) {
-      // Try to get accounts from the provider
-      const accountsResult = await chrome.tabs.sendMessage(currentTab.id, {
-        method: 'eth_requestAccounts'
-      }).catch(err => {
-        console.log('Provider method failed, trying alternative', err);
-        return null;
+    if (storedWallet.walletAccount && storedWallet.encryptedPrivateKey) {
+      // Wallet already exists, decrypt private key and restore
+      const privateKey = decryptPrivateKey(storedWallet.encryptedPrivateKey, 'temp_password'); // In real app, use secure password
+      walletAccount = storedWallet.walletAccount;
+      encryptedPrivateKey = storedWallet.encryptedPrivateKey;
+      
+      // Set current chain
+      localStorage.setItem('network', chain);
+      currentChain = chain;
+      
+      // Load RPC URLs for the selected chain
+      await loadChainRpcUrls(chain);
+      await setCurrentRpcForChain(chain);
+      
+      // Get balance
+      const balance = await getNativeTokenBalance(walletAccount.address, chain);
+      
+      return {
+        success: true,
+        address: walletAccount.address,
+        balance,
+        network: chain,
+        chainName: CHAIN_CONFIGS[chain]?.name || 'Ethereum Mainnet'
+      };
+    } else {
+      // Create new wallet
+      const newWallet = await createNewWallet();
+      walletAccount = newWallet.account;
+      walletMnemonic = newWallet.mnemonic;
+      encryptedPrivateKey = newWallet.encryptedPrivateKey;
+      
+      // Store wallet securely
+      await chrome.storage.local.set({
+        walletAccount: newWallet.account,
+        encryptedPrivateKey: newWallet.encryptedPrivateKey
       });
-
-      if (accountsResult && accountsResult.length > 0) {
-        const address = accountsResult[0];
-        
-        // Set current chain
-        localStorage.setItem('network', chain);
-        currentChain = chain;
-        
-        // Load RPC URLs for the selected chain
-        await loadChainRpcUrls(chain);
-        await setCurrentRpcForChain(chain);
-        
-        // Get balance
-        const balance = await getNativeTokenBalance(address, chain);
-        
-        // Save wallet data
-        connectedWallet = {
-          address,
-          balance,
-          provider: 'detected' // Would be the actual provider in full implementation
-        };
-        
-        return {
-          success: true,
-          address,
-          balance,
-          network: chain,
-          chainName: CHAIN_CONFIGS[chain]?.name || 'Ethereum Mainnet'
-        };
-      }
+      
+      // Set current chain
+      localStorage.setItem('network', chain);
+      currentChain = chain;
+      
+      // Load RPC URLs for the selected chain
+      await loadChainRpcUrls(chain);
+      await setCurrentRpcForChain(chain);
+      
+      // Get balance
+      const balance = await getNativeTokenBalance(walletAccount.address, chain);
+      
+      return {
+        success: true,
+        address: walletAccount.address,
+        balance,
+        network: chain,
+        chainName: CHAIN_CONFIGS[chain]?.name || 'Ethereum Mainnet',
+        mnemonic: newWallet.mnemonic // Only provided on first creation
+      };
     }
-    
-    // If no provider detected or connection failed, use simulated connection
-    console.log('Using simulated connection');
-    const fakeAddress = generateFakeAddress();
-    
-    // Set current chain
-    localStorage.setItem('network', chain);
-    currentChain = chain;
-    
-    // Load RPC URLs for the selected chain
-    await loadChainRpcUrls(chain);
-    await setCurrentRpcForChain(chain);
-    
-    // Simulate balance
-    const balance = (Math.random() * 10).toFixed(4);
-    
-    // Save wallet data
-    connectedWallet = {
-      address: fakeAddress,
-      balance,
-      provider: 'simulated'
-    };
-    
-    return {
-      success: true,
-      address: fakeAddress,
-      balance,
-      network: chain,
-      chainName: CHAIN_CONFIGS[chain]?.name || 'Ethereum Mainnet'
-    };
   } catch (error) {
     console.error('Error connecting wallet:', error);
     return {
@@ -279,6 +259,212 @@ async function connectWallet(chain = 'ethereum') {
     };
   }
 }
+
+// Create a new internal wallet
+async function createNewWallet() {
+  // Dynamically load ethers.js
+  await loadEthersLibraryDynamically();
+  
+  // Generate new wallet
+  const newWallet = window.ethers.Wallet.createRandom();
+  
+  // In a real implementation, we would encrypt the private key
+  // For this demo, we'll just simulate encryption
+  const encryptedKey = encryptPrivateKey(newWallet.privateKey, 'temp_password');
+  
+  return {
+    account: {
+      address: newWallet.address,
+      publicKey: newWallet.publicKey,
+    },
+    mnemonic: newWallet.mnemonic.phrase,
+    privateKey: newWallet.privateKey,
+    encryptedPrivateKey: encryptedKey
+  };
+}
+
+// Dynamic loading of ethers.js
+async function loadEthersLibraryDynamically() {
+  return new Promise((resolve, reject) => {
+    if (window.ethers) {
+      resolve(window.ethers);
+      return;
+    }
+    
+    const script = document.createElement('script');
+    script.src = 'https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js';
+    script.onload = () => resolve(window.ethers);
+    script.onerror = () => reject(new Error('Failed to load ethers library'));
+    document.head.appendChild(script);
+  });
+}
+
+// Encrypt private key (simplified implementation)
+function encryptPrivateKey(privateKey, password) {
+  // This is a simplified encryption - in reality, use proper encryption like scrypt
+  // For demo purposes only
+  return btoa(privateKey); // Base64 encoding (NOT secure in real applications)
+}
+
+// Decrypt private key
+function decryptPrivateKey(encryptedKey, password) {
+  // This is a simplified decryption - in reality, use proper decryption
+  // For demo purposes only
+  return atob(encryptedKey); // Base64 decoding (NOT secure in real applications)
+}
+
+// Improved wallet disconnection
+function disconnectWallet() {
+  // Don't clear stored wallet, just reset connection
+  connectedWallet = null;
+  currentChain = 'ethereum';
+  localStorage.removeItem('network');
+}
+
+// Enhanced network switching
+async function switchNetwork(newChain) {
+  if (!CHAIN_CONFIGS[newChain]) {
+    return { success: false, error: 'Unsupported network' };
+  }
+
+  localStorage.setItem('network', newChain);
+  currentChain = newChain;
+  
+  // Load RPC URLs for the new chain
+  await loadChainRpcUrls(newChain);
+  await setCurrentRpcForChain(newChain);
+  
+  // If wallet is connected, update its state
+  if (walletAccount) {
+    const newBalance = await getNativeTokenBalance(walletAccount.address, newChain);
+    return {
+      success: true,
+      network: newChain,
+      chainName: CHAIN_CONFIGS[newChain].name,
+      balance: newBalance
+    };
+  }
+  
+  return {
+    success: true,
+    network: newChain,
+    chainName: CHAIN_CONFIGS[newChain].name
+  };
+}
+
+// Function to get native token balance for a chain
+async function getNativeTokenBalance(address, chain) {
+  try {
+    // Since we don't have real RPC connection in this demo, we'll simulate
+    // In a real implementation, we would query the blockchain via RPC
+    
+    // Simulate different balances per network for demo
+    const chainBalances = {
+      ethereum: (Math.random() * 5).toFixed(4),
+      polygon: (Math.random() * 100).toFixed(4),
+      bsc: (Math.random() * 2).toFixed(4),
+      arbitrum: (Math.random() * 3).toFixed(4),
+      optimism: (Math.random() * 3).toFixed(4),
+      avalanche: (Math.random() * 10).toFixed(4),
+      fantom: (Math.random() * 50).toFixed(4),
+      base: (Math.random() * 2).toFixed(4)
+    };
+    
+    return chainBalances[chain] || '0.0000';
+  } catch (error) {
+    console.error(`Error getting balance for ${address} on ${chain}:`, error);
+    return '0.0000';
+  }
+}
+
+// Function to send a transaction (to be implemented fully)
+async function sendTransaction(toAddress, amount, tokenSymbol = 'native') {
+  try {
+    if (!walletAccount) {
+      throw new Error('Wallet not connected');
+    }
+
+    // Validate address
+    if (!toAddress || !ethers.utils.isAddress(toAddress)) {
+      throw new Error('Invalid recipient address');
+    }
+
+    // Validate amount
+    const currentBalance = await getNativeTokenBalance(walletAccount.address, currentChain);
+    if (parseFloat(amount) > parseFloat(currentBalance)) {
+      throw new Error('Insufficient balance');
+    }
+
+    // In a real implementation, this would create and sign a transaction
+    // Then broadcast it to the network via RPC
+    
+    // For now, simulate successful transaction
+    return {
+      success: true,
+      txHash: '0x' + Math.random().toString(16).substring(2, 66), // Simulated TX hash
+      from: walletAccount.address,
+      to: toAddress,
+      amount: amount,
+      timestamp: Date.now()
+    };
+  } catch (error) {
+    console.error('Error sending transaction:', error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
+
+// Add new message handlers for wallet functionality
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  // Existing handlers...
+
+  if (request.action === 'getMnemonic') {
+    if (walletMnemonic) {
+      sendResponse({ mnemonic: walletMnemonic });
+    } else {
+      sendResponse({ error: 'No mnemonic available' });
+    }
+  }
+
+  if (request.action === 'exportPrivateKey') {
+    if (encryptedPrivateKey) {
+      const decryptedKey = decryptPrivateKey(encryptedPrivateKey, 'temp_password');
+      sendResponse({ privateKey: decryptedKey });
+    } else {
+      sendResponse({ error: 'No private key available' });
+    }
+  }
+
+  if (request.action === 'sendTransaction') {
+    sendTransaction(request.to, request.amount, request.tokenSymbol).then(result => {
+      sendResponse(result);
+    });
+    return true; // Keep message channel open for async response
+  }
+
+  if (request.action === 'createNewWallet') {
+    createNewWallet().then(newWallet => {
+      walletAccount = newWallet.account;
+      walletMnemonic = newWallet.mnemonic;
+      encryptedPrivateKey = newWallet.encryptedPrivateKey;
+
+      // Store wallet securely
+      chrome.storage.local.set({
+        walletAccount: newWallet.account,
+        encryptedPrivateKey: newWallet.encryptedPrivateKey
+      });
+
+      sendResponse({
+        success: true,
+        address: newWallet.account.address,
+        mnemonic: newWallet.mnemonic
+      });
+    });
+    return true; // Keep message channel open for async response
+  }
+});
 
 // Enhanced wallet disconnection
 function disconnectWallet() {

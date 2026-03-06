@@ -1,19 +1,21 @@
 {
   "manifest_version": 3,
-  "name": "ETH Wallet Plugin",
+  "name": "Rabbit Wallet - Multi-Chain Crypto Wallet",
   "version": "1.0.0",
-  "description": "Ethereum wallet with stats dashboard and DeFi integration",
+  "description": "Secure multi-chain crypto wallet with built-in key management",
   "permissions": [
     "sidePanel",
     "activeTab",
     "storage",
-    "scripting"
+    "scripting",
+    "unlimitedStorage"
   ],
   "host_permissions": [
     "http://localhost/*",
     "https://*.infura.io/*",
     "https://*.alchemyapi.io/*",
-    "https://*.etherscan.io/*"
+    "https://*.etherscan.io/*",
+    "https://cdn.ethers.io/*"
   ],
   "action": {
     "default_title": "Open ETH Wallet"

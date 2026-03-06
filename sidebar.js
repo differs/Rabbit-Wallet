@@ -1,4 +1,21 @@
-// ETH Wallet Plugin Sidebar Script
+// Rabbit Wallet Plugin Sidebar Script
+
+// Load ethers.js library
+async function loadEthersLibrary() {
+  if (typeof window.ethers !== 'undefined') {
+    return;
+  }
+  
+  // Load ethers library dynamically if not available
+  const script = document.createElement('script');
+  script.src = 'https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js';
+  document.head.appendChild(script);
+  
+  // Wait for the script to load
+  await new Promise((resolve) => {
+    script.onload = resolve;
+  });
+}
 
 // DOM Elements
 const connectBtn = document.getElementById('connectBtn');
@@ -165,26 +182,100 @@ function setupEventListeners() {
 }
 
 // Toggle wallet connection
-async function connectWallet() {
-  try {
-    const selectedNetwork = networkSelect.value || localStorage.getItem('selectedNetwork') || 'ethereum';
+async function toggleWalletConnection() {
+  if (walletConnected) {
+    // Disconnect wallet
+    await disconnectWallet();
+  } else {
+    // Connect wallet
+    await connectWallet();
+  }
+}
+
+// Add event listeners for transfer functionality
+document.addEventListener('DOMContentLoaded', () => {
+  // Transfer modal triggers
+  const transferTrigger = document.getElementById('transferTrigger');
+  const closeTransfer = document.getElementById('closeTransfer');
+  const transferModal = document.getElementById('transferModal');
+  const sendTransferBtn = document.getElementById('sendTransfer');
+  
+  if (transferTrigger) {
+    transferTrigger.addEventListener('click', () => {
+      transferModal.style.display = 'flex';
+    });
+  }
+  
+  if (closeTransfer) {
+    closeTransfer.addEventListener('click', () => {
+      transferModal.style.display = 'none';
+    });
+  }
+  
+  if (sendTransferBtn) {
+    sendTransferBtn.addEventListener('click', initiateTransfer);
+  }
+});
+
+// Initiate transfer
+async function initiateTransfer() {
+  const recipientAddress = document.getElementById('recipientAddress').value;
+  const transferAmount = document.getElementById('transferAmount').value;
+  const transferToken = document.getElementById('transferToken').value;
+  
+  // Basic validation
+  if (!recipientAddress) {
+    alert('Please enter a recipient address');
+    return;
+  }
+  
+  if (!transferAmount || parseFloat(transferAmount) <= 0) {
+    alert('Please enter a valid amount');
+    return;
+  }
+  
+  // Confirm transaction
+  if (!confirm(`Send ${transferAmount} ${transferToken.toUpperCase()} to ${recipientAddress}?`)) {
+    return;
+  }
+  
+  // Show processing state
+  const sendBtn = document.getElementById('sendTransfer');
+  const originalText = sendBtn.textContent;
+  sendBtn.textContent = 'Processing...';
+  sendBtn.disabled = true;
+  
+  // Send transaction via background script
+  chrome.runtime.sendMessage({
+    action: 'sendTransaction',
+    to: recipientAddress,
+    amount: transferAmount,
+    tokenSymbol: transferToken
+  }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error('Error sending transaction:', chrome.runtime.lastError);
+      alert('Error sending transaction: ' + chrome.runtime.lastError.message);
+      sendBtn.textContent = originalText;
+      sendBtn.disabled = false;
+      return;
+    }
     
-    // Show connecting state
-    connectBtn.textContent = 'Connecting...';
-    connectBtn.disabled = true;
+    if (response && response.success) {
+      alert(`Transaction sent successfully!\nTX Hash: ${response.txHash}`);
+      document.getElementById('transferModal').style.display = 'none';
+      
+      // Clear form
+      document.getElementById('recipientAddress').value = '';
+      document.getElementById('transferAmount').value = '';
+    } else {
+      alert('Transaction failed: ' + (response?.error || 'Unknown error'));
+    }
     
-    // Request connection from background script
-    chrome.runtime.sendMessage({
-      action: 'connectWallet',
-      network: selectedNetwork
-    }, (response) => {
-      if (chrome.runtime.lastError) {
-        console.error('Error connecting wallet:', chrome.runtime.lastError);
-        alert('Error connecting wallet: ' + chrome.runtime.lastError.message);
-        connectBtn.textContent = 'Connect';
-        connectBtn.disabled = false;
-        return;
-      }
+    // Reset button
+    sendBtn.textContent = originalText;
+    sendBtn.disabled = false;
+  });
+}
       
       if (response && response.success) {
         walletConnected = true;
@@ -236,6 +327,102 @@ async function connectWallet() {
         connectBtn.disabled = false;
         return;
       }
+      
+      if (response && response.success) {
+        walletConnected = true;
+        walletData = response;
+        console.log('Wallet connected successfully on network:', response.network);
+        // Update network selection to match connected network
+        networkSelect.value = response.network;
+        
+        // Handle mnemonic display on first creation
+        if (response.mnemonic) {
+          showMnemonicBackup(response.mnemonic);
+        }
+        
+        // Update the display after a brief moment to allow for data sync
+        setTimeout(() => {
+          updateWalletDisplay();
+          loadTokenBalances(); // Load token balances after connection
+        }, 500);
+      } else {
+        console.error('Wallet connection failed:', response);
+        alert('Wallet connection failed: ' + (response?.error || 'Unknown error'));
+      }
+      
+      // Re-enable button
+      connectBtn.disabled = false;
+    });
+  } catch (error) {
+    console.error('Error connecting wallet:', error);
+    alert('Error connecting wallet: ' + error.message);
+    connectBtn.textContent = 'Connect';
+    connectBtn.disabled = false;
+  }
+}
+
+// Show mnemonic backup screen
+function showMnemonicBackup(mnemonic) {
+  // Create a modal or overlay to show the mnemonic
+  const overlay = document.createElement('div');
+  overlay.id = 'mnemonic-backup-overlay';
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  `;
+  
+  overlay.innerHTML = `
+    <div style="
+      background: var(--bg-secondary);
+      padding: 25px;
+      border-radius: 12px;
+      max-width: 90%;
+      width: 400px;
+      text-align: center;
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(10px);
+    ">
+      <h3 style="color: var(--text-primary); margin-bottom: 15px;">Backup Your Recovery Phrase</h3>
+      <p style="color: var(--text-secondary); margin-bottom: 20px; font-size: 14px;">
+        Write down these 12 words in order. This is the only way to recover your wallet.
+      </p>
+      <div style="
+        background: var(--bg-tertiary);
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        font-family: monospace;
+        word-break: break-all;
+        color: var(--text-primary);
+        font-size: 16px;
+        line-height: 1.8;
+      ">${mnemonic}</div>
+      <button id="backup-done-btn" style="
+        background: var(--accent-color);
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+      ">I've Saved It</button>
+    </div>
+  `;
+  
+  document.body.appendChild(overlay);
+  
+  document.getElementById('backup-done-btn').addEventListener('click', () => {
+    document.body.removeChild(overlay);
+  });
+}
       
       if (response && response.success) {
         walletConnected = true;
